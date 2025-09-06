@@ -39,7 +39,7 @@ class OfficeBookingSystem:
 
     def is_available(self, place: int, start: datetime, end: datetime) -> bool:
         """Проверка доступности места в указанный период"""
-        # Проверяем, что время бронирования в рабочих часах
+        # Проверяем, что время бронирования в рабочих часас
         if not (self.working_hours[0] <= start.hour < self.working_hours[1] and
                 self.working_hours[0] < end.hour <= self.working_hours[1]):
             return False
@@ -172,20 +172,24 @@ class OfficeBookingSystem:
         target_date = date.date()
 
         for booking in self.bookings:
-            booking_start = datetime.fromisoformat(booking['start'])
-            booking_end = datetime.fromisoformat(booking['end'])
+            try:
+                booking_start = datetime.fromisoformat(booking['start'])
+                booking_end = datetime.fromisoformat(booking['end'])
 
-            # Если бронирование затрагивает целевую дату
-            if booking_start.date() <= target_date <= booking_end.date():
-                # Определяем временной интервал для целевой даты
-                start_time = booking_start.time() if booking_start.date() == target_date else datetime.min.time()
-                end_time = booking_end.time() if booking_end.date() == target_date else datetime.max.time()
+                # Если бронирование затрагивает целевую дату
+                if booking_start.date() <= target_date <= booking_end.date():
+                    # Определяем временной интервал для целевой даты
+                    start_time = booking_start.time() if booking_start.date() == target_date else datetime.min.time()
+                    end_time = booking_end.time() if booking_end.date() == target_date else datetime.max.time()
 
-                schedule[booking['place']].append({
-                    'user': booking['user'],
-                    'start': start_time.strftime('%H:%M'),
-                    'end': end_time.strftime('%H:%M')
-                })
+                    schedule[booking['place']].append({
+                        'user': booking['user'],
+                        'start': start_time.strftime('%H:%M'),
+                        'end': end_time.strftime('%H:%M')
+                    })
+            except (ValueError, KeyError):
+                # Пропускаем некорректные записи бронирований
+                continue
 
         # Сортируем бронирования по времени начала
         for place in schedule:
@@ -405,26 +409,54 @@ def schedule():
         return redirect(url_for('login'))
 
     date_str = request.args.get('date', datetime.now().date().isoformat())
-    min_date = datetime.now().strftime("%Y-%m-%d")
-    max_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    view_type = request.args.get('view', 'day')  # day, week
 
     try:
         date = datetime.fromisoformat(date_str).date()
         date_dt = datetime.combine(date, datetime.min.time())
     except ValueError:
         date_dt = datetime.now()
+        date = date_dt.date()
 
-    schedule = booking_system.get_booking_schedule(date_dt)
+    # Для навигации
+    if view_type == 'day':
+        previous_date = (date_dt - timedelta(days=1)).date()
+        next_date = (date_dt + timedelta(days=1)).date()
+    elif view_type == 'week':
+        previous_date = (date_dt - timedelta(weeks=1)).date()
+        next_date = (date_dt + timedelta(weeks=1)).date()
+    else:
+        previous_date = date
+        next_date = date
+
+    # Для ежедневного просмотра
+    schedule_data = booking_system.get_booking_schedule(date_dt)
     formatted_date = date_dt.strftime('%d.%m.%Y')
+
+    # Для недельного просмотра
+    week_days = []
+    if view_type == 'week':
+        start_of_week = date_dt - timedelta(days=date_dt.weekday())
+        for i in range(7):
+            day_date = start_of_week + timedelta(days=i)
+            day_schedule = booking_system.get_booking_schedule(day_date)
+            week_days.append({
+                'date': day_date,
+                'schedule': day_schedule
+            })
 
     return render_template('schedule.html',
                            username=session['username'],
-                           schedule=schedule,
-                           selected_date=date_dt.date().isoformat(),
+                           schedule=schedule_data,
+                           selected_date=date.isoformat(),
                            formatted_date=formatted_date,
-                           min_date=min_date,
-                           max_date=max_date,
-                           working_hours=booking_system.working_hours)
+                           min_date=datetime.now().strftime("%Y-%m-%d"),
+                           max_date=(datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+                           working_hours=booking_system.working_hours,
+                           view_type=view_type,
+                           week_days=week_days,
+                           previous_date=previous_date,
+                           next_date=next_date)
 
 
 @app.route('/logout')
